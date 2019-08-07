@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "firmware",
 ]
 
 [patch.crates-io]

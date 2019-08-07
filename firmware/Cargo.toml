@@ -1,0 +1,16 @@
+[package]
+name = "deadbug-fw"
+version = "0.1.0"
+authors = ["Vadim Kaushan <admin@disasm.info>"]
+edition = "2018"
+
+[dependencies]
+cortex-m = "0.6"
+cortex-m-rt = "0.6"
+stm32f3xx-hal = { version = "0.2.3", features = ["rt", "stm32f303"] }
+panic-semihosting = "0.5"
+usb-device = "0.2.1"
+usbd-serial = "0.1"
+stm32-usbd = { version = "0.3.0", features = ["stm32f303xc"] }
+bbqueue = "0.3.2"
+#cobs = { version = "0.1.4", default_features = false }
