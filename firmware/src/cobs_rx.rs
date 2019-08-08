@@ -96,6 +96,8 @@ impl CobsRxProducer {
                     }
 
                     buffer = &mut buffer[data_size..data_size + tail_size];
+                } else {
+                    break;
                 }
             }
 
