@@ -1,5 +1,11 @@
 enum DecoderState {
+    /// Discarding all bytes until first zero
     Idle,
+
+    /// State immediate after the zero byte
+    Start,
+
+    /// In-progress decoding
     Decoding(u8),
 }
 
@@ -14,6 +20,10 @@ impl CobsDecoder {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.state = DecoderState::Idle;
+    }
+
     /// Returns (raw size, data size, finished)
     pub fn decode(&mut self, buffer: &mut [u8]) -> (usize, usize, bool) {
         let mut read_idx = 0;
@@ -24,13 +34,18 @@ impl CobsDecoder {
 
             match self.state {
                 DecoderState::Idle => {
+                    if byte == 0 {
+                        self.state = DecoderState::Start;
+                    }
+                }
+                DecoderState::Start => {
                     if byte != 0 {
                         self.state = DecoderState::Decoding(byte - 1)
                     }
                 },
                 DecoderState::Decoding(b) if b == 0 => {
                     if byte == 0 {
-                        self.state = DecoderState::Idle;
+                        self.state = DecoderState::Start;
                         return (read_idx, write_idx, true);
                     } else {
                         self.state = DecoderState::Decoding(byte - 1);
