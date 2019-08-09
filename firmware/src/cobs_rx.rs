@@ -1,6 +1,6 @@
 use bbqueue::{Producer, Consumer, GrantW, GrantR};
 use core::ops::{Deref, DerefMut};
-use crate::cobs::CobsDecoder;
+use crate::cobs::{CobsDecoder, DecoderStatus};
 
 pub struct CobsRxGrantR {
     data_grant: GrantR,
@@ -77,25 +77,34 @@ impl CobsRxProducer {
             let mut buffer = &mut grant.data_grant[..size];
             let mut data_buffer_size = 0;
             while !buffer.is_empty() {
-                let (raw_size, data_size, finished) = self.decoder.decode(buffer);
+                let (raw_size, data_size, status) = self.decoder.decode(buffer);
                 data_buffer_size += data_size;
                 self.current_packet_size += data_size;
 
-                if finished {
-                    let size_bytes = (self.current_packet_size as u16).to_ne_bytes();
-                    self.current_packet_size = 0;
+                match status {
+                    DecoderStatus::InProgress => {
+                        break;
+                    },
+                    DecoderStatus::Finished | DecoderStatus::Error => {
+                        let size_bytes = (self.current_packet_size as u16).to_ne_bytes();
+                        self.current_packet_size = 0;
 
-                    info_buffer[..2].copy_from_slice(&size_bytes);
-                    info_buffer = &mut info_buffer[2..];
-                    info_buffer_size += 2;
+                        info_buffer[..2].copy_from_slice(&size_bytes);
+                        info_buffer = &mut info_buffer[2..];
+                        info_buffer_size += 2;
 
-                    // Move buffer tail
-                    let tail_size = buffer.len() - raw_size;
-                    for i in 0..tail_size {
-                        buffer[data_size + i] = buffer[raw_size + i];
-                    }
+                        // Move buffer tail
+                        let tail_size = buffer.len() - raw_size;
+                        for i in 0..tail_size {
+                            buffer[data_size + i] = buffer[raw_size + i];
+                        }
 
-                    buffer = &mut buffer[data_size..data_size + tail_size];
+                        buffer = &mut buffer[data_size..data_size + tail_size];
+                    },
+                }
+
+                if status == DecoderStatus::Finished {
+
                 } else {
                     break;
                 }
