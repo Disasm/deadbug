@@ -46,8 +46,8 @@ pub fn app_run(devices: AppDevices) -> ! {
 
     loop {
         if usb_dev.poll(&mut [&mut serial]) {
-            serial.process();
         }
+        serial.process();
         proc.process();
     }
 }
