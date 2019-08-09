@@ -86,5 +86,6 @@ pub fn cobs_encode_in_place(buffer: &mut [u8], data_offset: usize, data_size: us
         code = 1;
     }
     buffer[code_index] = code;
-    write_idx
+    buffer[write_idx] = 0;
+    write_idx + 1
 }
