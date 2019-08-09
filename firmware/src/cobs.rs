@@ -9,6 +9,13 @@ enum DecoderState {
     Decoding(u8),
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum DecoderStatus {
+    InProgress,
+    Finished,
+    Error,
+}
+
 pub struct CobsDecoder {
     state: DecoderState
 }
@@ -24,8 +31,8 @@ impl CobsDecoder {
         self.state = DecoderState::Idle;
     }
 
-    /// Returns (raw size, data size, finished)
-    pub fn decode(&mut self, buffer: &mut [u8]) -> (usize, usize, bool) {
+    /// Returns (raw size, data size, status)
+    pub fn decode(&mut self, buffer: &mut [u8]) -> (usize, usize, DecoderStatus) {
         let mut read_idx = 0;
         let mut write_idx = 0;
         while read_idx < buffer.len() {
@@ -46,7 +53,7 @@ impl CobsDecoder {
                 DecoderState::Decoding(b) if b == 0 => {
                     if byte == 0 {
                         self.state = DecoderState::Start;
-                        return (read_idx, write_idx, true);
+                        return (read_idx, write_idx, DecoderStatus::Finished);
                     } else {
                         self.state = DecoderState::Decoding(byte - 1);
                         buffer[write_idx] = 0;
@@ -54,13 +61,17 @@ impl CobsDecoder {
                     }
                 },
                 DecoderState::Decoding(b) => {
+                    if byte == 0 {
+                        self.state = DecoderState::Start;
+                        return (read_idx, write_idx, DecoderStatus::Error);
+                    }
                     self.state = DecoderState::Decoding(b - 1);
                     buffer[write_idx] = byte;
                     write_idx += 1;
                 },
             }
         }
-        (read_idx, write_idx, false)
+        (read_idx, write_idx, DecoderStatus::InProgress)
     }
 }
 
