@@ -23,19 +23,21 @@ impl<'a, B: UsbBus> SmartSerial<'a, B>
     }
 
     pub fn process(&mut self) {
-        if let Some(mut grant) = self.producer.grant(64) {
+        while let Some(mut grant) = self.producer.grant(64) {
             if let Ok(size) = self.inner.read(&mut grant) {
                 self.producer.commit(size, grant);
             } else {
                 self.producer.commit(0, grant);
+                break;
             }
         }
 
-        if let Ok(grant) = self.consumer.read() {
+        while let Ok(grant) = self.consumer.read() {
             if let Ok(size) = self.inner.write(&grant) {
                 self.consumer.release(size, grant);
             } else {
                 self.consumer.release(0, grant);
+                break;
             }
         }
     }
