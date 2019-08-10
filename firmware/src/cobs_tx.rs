@@ -1,4 +1,4 @@
-use bbqueue::{Producer, GrantW, Consumer};
+use bbqueue::{Producer, GrantW};
 use core::ops::{Deref, DerefMut};
 use crate::cobs::cobs_encode_in_place;
 
@@ -63,5 +63,3 @@ impl CobsTxProducer {
         self.data_producer.commit(encoded_size, grant.data_grant);
     }
 }
-
-pub type CobsTxConsumer = Consumer;
