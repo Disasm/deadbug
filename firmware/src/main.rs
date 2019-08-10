@@ -12,6 +12,7 @@ mod app;
 mod cobs;
 mod cobs_rx;
 mod cobs_tx;
+mod packet_processor;
 mod smart_serial;
 
 
