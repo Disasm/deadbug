@@ -102,12 +102,6 @@ impl CobsRxProducer {
                         buffer = &mut buffer[data_size..data_size + tail_size];
                     },
                 }
-
-                if status == DecoderStatus::Finished {
-
-                } else {
-                    break;
-                }
             }
 
             self.data_producer.commit(data_buffer_size, grant.data_grant);
