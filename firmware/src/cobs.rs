@@ -20,6 +20,7 @@ pub struct CobsDecoder {
     state: DecoderState
 }
 
+#[allow(unused)]
 impl CobsDecoder {
     pub fn new() -> Self {
         Self {
