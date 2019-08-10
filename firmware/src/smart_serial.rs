@@ -1,19 +1,18 @@
 use usbd_serial::{SerialPort, DefaultBufferStore};
-use crate::cobs_rx::CobsRxProducer;
-use crate::cobs_tx::CobsTxConsumer;
 use usb_device::class_prelude::*;
 use usb_device::Result;
+use bbqueue::{Producer, Consumer};
 
 pub struct SmartSerial<'a, B: UsbBus> {
     inner: SerialPort<'a, B, DefaultBufferStore, DefaultBufferStore>,
-    producer: CobsRxProducer,
-    consumer: CobsTxConsumer,
+    producer: Producer,
+    consumer: Consumer,
 }
 
 impl<'a, B: UsbBus> SmartSerial<'a, B>
 {
     /// Creates a new USB serial port with the provided UsbBus and 128 byte read/write buffers.
-    pub fn new(alloc: &'a UsbBusAllocator<B>, producer: CobsRxProducer, consumer: CobsTxConsumer) -> Self
+    pub fn new(alloc: &'a UsbBusAllocator<B>, producer: Producer, consumer: Consumer) -> Self
     {
         Self {
             inner: SerialPort::new(alloc),
@@ -23,7 +22,7 @@ impl<'a, B: UsbBus> SmartSerial<'a, B>
     }
 
     pub fn process(&mut self) {
-        while let Some(mut grant) = self.producer.grant(64) {
+        while let Ok(mut grant) = self.producer.grant(64) {
             if let Ok(size) = self.inner.read(&mut grant) {
                 self.producer.commit(size, grant);
             } else {
