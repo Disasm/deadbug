@@ -3,6 +3,7 @@ use usbd_serial::USB_CLASS_CDC;
 use usb_device::prelude::*;
 use usb_device::bus::UsbBusAllocator;
 use bbqueue::BBQueue;
+use log::info;
 use crate::cobs_tx::CobsTxProducer;
 use crate::smart_serial::SmartSerial;
 use crate::packet_processor::{PacketProcessor, PacketConsumer};
@@ -11,9 +12,9 @@ pub struct AppDevices {
     pub bus: UsbBusAllocator<UsbBusType>,
 }
 
-static mut RX_DATA_BUFFER: [u8; 1024] = [0; 1024];
+static mut RX_DATA_BUFFER: [u8; 512] = [0; 512];
 static mut RX_PACKET_BUFFER: [u8; 512] = [0; 512];
-static mut TX_DATA_BUFFER: [u8; 1024] = [0; 1024];
+static mut TX_DATA_BUFFER: [u8; 512] = [0; 512];
 
 pub fn app_run(devices: AppDevices) -> ! {
     let usb_bus = devices.bus;
@@ -44,6 +45,8 @@ pub fn app_run(devices: AppDevices) -> ! {
         .build();
 
     loop {
+        log::logger().flush();
+
         if usb_dev.poll(&mut [&mut serial]) {
         }
         serial.process();
@@ -59,10 +62,13 @@ struct LoopbackProcessor {
 }
 
 impl LoopbackProcessor {
+    #[inline(never)]
     pub fn process(&mut self) {
         if let Some(read_grant) = self.consumer.read() {
+            info!("got grant, len {}", read_grant.len());
             if read_grant.len() > 256 {
                 // Too large packet
+                info!("packet is too large ({})", read_grant.len());
                 self.consumer.release_consume(read_grant);
             } else {
                 if let Some(mut write_grant) = self.producer.grant(read_grant.len()) {
