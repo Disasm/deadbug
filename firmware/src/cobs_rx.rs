@@ -134,11 +134,15 @@ impl CobsRxConsumer {
             if info_grant.len() >= 2 {
                 let packet_size = u16::from_ne_bytes([info_grant[0], info_grant[1]]) as usize;
                 if let Ok(data_grant) = self.data_consumer.read() {
-                    return Some(CobsRxGrantR {
-                        data_grant,
-                        info_grant,
-                        packet_size,
-                    })
+                    if data_grant.len() >= packet_size {
+                        return Some(CobsRxGrantR {
+                            data_grant,
+                            info_grant,
+                            packet_size,
+                        })
+                    }
+
+                    self.data_consumer.release(0, data_grant);
                 }
             }
 
