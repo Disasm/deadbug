@@ -10,7 +10,6 @@ use stm32f3xx_hal::{prelude::*, stm32, hal::digital::v2::OutputPin};
 
 mod app;
 mod cobs;
-mod cobs_rx;
 mod cobs_tx;
 mod packet_processor;
 mod smart_serial;
