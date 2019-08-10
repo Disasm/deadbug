@@ -13,4 +13,4 @@ usb-device = "0.2.1"
 usbd-serial = "0.1"
 stm32-usbd = { version = "0.3.0", features = ["stm32f303xc"] }
 bbqueue = "0.3.2"
-#cobs = { version = "0.1.4", default_features = false }
+cobs = { version = "0.1.4", default_features = false }
