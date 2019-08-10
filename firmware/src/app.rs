@@ -12,7 +12,7 @@ pub struct AppDevices {
 }
 
 static mut RX_DATA_BUFFER: [u8; 1024] = [0; 1024];
-static mut RX_INFO_BUFFER: [u8; 130] = [0; 130];
+static mut RX_INFO_BUFFER: [u8; 256] = [0; 256];
 static mut TX_DATA_BUFFER: [u8; 1024] = [0; 1024];
 
 pub fn app_run(devices: AppDevices) -> ! {
