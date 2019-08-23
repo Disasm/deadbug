@@ -1,23 +1,38 @@
 #![no_std]
 #![no_main]
 
-extern crate panic_semihosting;
+//extern crate panic_semihosting;
 
 use cortex_m::asm::delay;
 use cortex_m_rt::entry;
 use stm32_usbd::UsbBus;
 use stm32f3xx_hal::{prelude::*, stm32, hal::digital::v2::OutputPin};
+use log::{info, error};
+use core::panic::PanicInfo;
 
 mod app;
 mod cobs;
 mod cobs_tx;
+mod command_processor;
+mod dumb_serial;
 mod packet_processor;
+#[allow(unused)]
 mod smart_serial;
+mod targets;
 
+use targets::f3_disco::BoardGpioPinSet;
 
 fn configure_usb_clock() {
     let rcc = unsafe { &*stm32::RCC::ptr() };
     rcc.cfgr.modify(|_, w| w.usbpre().set_bit());
+}
+
+#[panic_handler]
+fn panic_handler(panic_info: &PanicInfo) -> ! {
+    error!("panic! {}", panic_info);
+    loop {
+        log::logger().flush();
+    }
 }
 
 #[entry]
@@ -34,10 +49,13 @@ fn main() -> ! {
         .pclk2(24.mhz())
         .freeze(&mut flash.acr);
 
-    // Configure the on-board LED (LD10, south red)
-    let mut gpioe = dp.GPIOE.split(&mut rcc.ahb);
-    let mut led = gpioe.pe13.into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-    let _ = led.set_low(); // Turn off
+    let gpioc = dp.GPIOC.split(&mut rcc.ahb);
+    stm32_log::configure(dp.USART1, gpioc.pc4, gpioc.pc5, 115_200.bps(), clocks);
+    log::set_max_level(log::LevelFilter::Trace);
+    //log::set_max_level(log::LevelFilter::Error);
+
+    info!("========================================");
+    error!("clocks: sysclk={}, hclk={}", clocks.sysclk().0, clocks.hclk().0);
 
     let mut gpioa = dp.GPIOA.split(&mut rcc.ahb);
 
@@ -55,7 +73,8 @@ fn main() -> ! {
     let usb_bus = UsbBus::new(dp.USB, (usb_dm, usb_dp));
 
     let devices = app::AppDevices {
-        bus: usb_bus
+        bus: usb_bus,
+        pins: BoardGpioPinSet::new(),
     };
     app::app_run(devices)
 }

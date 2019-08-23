@@ -1,0 +1,9 @@
+[package]
+name = "deadbug-common"
+version = "0.1.0"
+authors = ["Vadim Kaushan <admin@disasm.info>"]
+edition = "2018"
+
+[dependencies]
+serde = { version = "1.0", default_features = false, features = ["derive"] }
+ssmarshal = { version = "1.0.0", default_features = false }

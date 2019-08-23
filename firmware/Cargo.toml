@@ -14,3 +14,12 @@ usbd-serial = "0.1"
 stm32-usbd = { version = "0.3.0", features = ["stm32f303xc"] }
 bbqueue = "0.3.2"
 cobs = { version = "0.1.4", default_features = false }
+serde = { version = "1.0", default_features = false, features = ["derive"] }
+stm32-log = { version = "0.1.0", features = ["f3-discovery"] }
+log = "0.4.8"
+ssmarshal = { version = "1.0.0", default_features = false }
+deadbug-common = { path = "../common" }
+
+[profile.release]
+debug = true
+lto = false

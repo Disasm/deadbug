@@ -1,6 +1,10 @@
 [workspace]
 members = [
+    "common",
     "firmware",
+    "stm32-log",
 ]
 
 [patch.crates-io]
+deadbug-common = { path = "common" }
+stm32-log = { path = "stm32-log" }

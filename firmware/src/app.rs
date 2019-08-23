@@ -3,13 +3,15 @@ use usbd_serial::USB_CLASS_CDC;
 use usb_device::prelude::*;
 use usb_device::bus::UsbBusAllocator;
 use bbqueue::BBQueue;
-use log::info;
 use crate::cobs_tx::CobsTxProducer;
-use crate::smart_serial::SmartSerial;
 use crate::packet_processor::{PacketProcessor, PacketConsumer};
+use crate::targets::BoardGpioPinSet;
+use crate::command_processor::{CommandProcessor, GpioCommandTarget};
+use crate::dumb_serial::QueuedSerial;
 
 pub struct AppDevices {
     pub bus: UsbBusAllocator<UsbBusType>,
+    pub pins: BoardGpioPinSet,
 }
 
 static mut RX_DATA_BUFFER: [u8; 512] = [0; 512];
@@ -30,12 +32,11 @@ pub fn app_run(devices: AppDevices) -> ! {
     let packet_consumer = PacketConsumer::new(rx_packet_consumer);
     let packet_producer = CobsTxProducer::new(tx_data_producer);
 
-    let mut proc = LoopbackProcessor {
-        producer: packet_producer,
-        consumer: packet_consumer,
-    };
+    let gpio_target = GpioCommandTarget::new(devices.pins);
+    let mut proc = CommandProcessor::new(packet_producer, packet_consumer, gpio_target);
 
-    let mut serial = SmartSerial::new(&usb_bus, rx_data_producer, tx_data_consumer);
+    //let mut serial = SmartSerial::new(&usb_bus, rx_data_producer, tx_data_consumer);
+    let mut serial = QueuedSerial::new(&usb_bus, rx_data_producer, tx_data_consumer);
 
     let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
         .manufacturer("Fake company")
@@ -52,33 +53,5 @@ pub fn app_run(devices: AppDevices) -> ! {
         serial.process();
         packet_processor.process();
         proc.process();
-    }
-}
-
-
-struct LoopbackProcessor {
-    producer: CobsTxProducer,
-    consumer: PacketConsumer,
-}
-
-impl LoopbackProcessor {
-    #[inline(never)]
-    pub fn process(&mut self) {
-        if let Some(read_grant) = self.consumer.read() {
-            info!("got grant, len {}", read_grant.len());
-            if read_grant.len() > 256 {
-                // Too large packet
-                info!("packet is too large ({})", read_grant.len());
-                self.consumer.release_consume(read_grant);
-            } else {
-                if let Some(mut write_grant) = self.producer.grant(read_grant.len()) {
-                    write_grant.copy_from_slice(&read_grant);
-                    self.consumer.release_consume(read_grant);
-                    self.producer.commit(write_grant);
-                } else {
-                    self.consumer.release_unread(read_grant);
-                }
-            }
-        }
     }
 }
