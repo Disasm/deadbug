@@ -2,6 +2,7 @@
 members = [
     "common",
     "firmware",
+    "software",
     "stm32-log",
 ]
 
