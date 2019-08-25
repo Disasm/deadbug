@@ -53,7 +53,7 @@ impl CobsTxProducer {
     #[allow(dead_code)]
     #[inline(always)]
     pub fn commit_with_size(&mut self, size: usize, grant: CobsTxGrantW) {
-        assert!((size + grant.offset) < grant.data_grant.len());
+        assert!((size + grant.offset) <= grant.data_grant.len());
         self.commit_with_size_unchecked(size, grant)
     }
 
