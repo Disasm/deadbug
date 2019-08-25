@@ -18,7 +18,7 @@ serde = { version = "1.0", default_features = false, features = ["derive"] }
 stm32-log = { version = "0.1.0", features = ["f3-discovery"] }
 log = "0.4.8"
 ssmarshal = { version = "1.0.0", default_features = false }
-deadbug-common = { path = "../common" }
+deadbug-common = { path = "../common", default_features = false }
 
 [profile.release]
 debug = true
