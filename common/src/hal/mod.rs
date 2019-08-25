@@ -10,6 +10,8 @@ pub enum HalErrorKind {
 
     InvalidParameter,
 
+    ProtocolError,
+
     /// Invalid GPIO mode
     /// Can be used either for invalid method calls or invalid mode values passed
     InvalidGpioMode,
