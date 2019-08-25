@@ -59,7 +59,11 @@ impl CobsTxProducer {
 
     #[inline(always)]
     fn commit_with_size_unchecked(&mut self, size: usize, mut grant: CobsTxGrantW) {
-        let encoded_size = cobs_encode_in_place(&mut grant.data_grant, grant.offset, size);
-        self.data_producer.commit(encoded_size, grant.data_grant);
+        if size == 0 {
+            self.data_producer.commit(0, grant.data_grant);
+        } else {
+            let encoded_size = cobs_encode_in_place(&mut grant.data_grant, grant.offset, size);
+            self.data_producer.commit(encoded_size, grant.data_grant);
+        }
     }
 }
