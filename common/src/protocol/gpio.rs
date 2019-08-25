@@ -19,8 +19,8 @@ pub enum GpioResponse {
     GetPinValue(bool),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GpioPinInformation {
-    index_major: u8,
-    index_minor: u8,
+    pub index_major: u8,
+    pub index_minor: u8,
 }

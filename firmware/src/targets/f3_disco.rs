@@ -1,6 +1,7 @@
 use deadbug_common::hal::gpio::{GpioPin, GpioPinMode};
 use deadbug_common::hal::{HalResult, HalErrorKind};
 use stm32f3xx_hal::stm32;
+use deadbug_common::protocol::gpio::GpioPinInformation;
 
 pub struct BoardGpioPin {
     index: u8,
@@ -42,8 +43,11 @@ impl BoardGpioPin {
 }
 
 impl GpioPin for BoardGpioPin {
-    fn address(&self) -> (u8, u8) {
-        (self.peripheral(), self.pin_index())
+    fn information(&self) -> GpioPinInformation {
+        GpioPinInformation {
+            index_major: self.peripheral() + b'A',
+            index_minor: self.pin_index(),
+        }
     }
 
     fn mode(&self) -> GpioPinMode {
@@ -137,6 +141,10 @@ impl BoardGpioPinSet {
         Self {
             pins,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.pins.len()
     }
 }
 

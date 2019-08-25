@@ -6,6 +6,8 @@ use core::ops::{Deref, DerefMut};
 use crate::targets::{BoardGpioPinSet, BoardGpioPin};
 use deadbug_common::hal::gpio::GpioPin;
 use deadbug_common::protocol::ResponseHeader;
+use deadbug_common::protocol::gpio::GpioPinInformation;
+use core::{mem, cmp};
 
 
 enum CommandError {
@@ -55,13 +57,13 @@ impl CommandProcessor {
 
             let write_grant_size = self.write_grant_request.unwrap_or(4);
             if let Some(mut write_grant) = self.producer.grant(write_grant_size) {
-                let target = read_grant[0];
+                let endpoint = read_grant[0];
                 let read_grant_shim = CommandGrantR(&read_grant);
                 let write_grant_shim = CommandGrantW(&mut write_grant);
-                match self.process_command(target, read_grant_shim, write_grant_shim) {
-                    Ok(size) => {
+                match self.process_command(endpoint, read_grant_shim, write_grant_shim) {
+                    Ok(payload_size) => {
                         write_grant[0] = self.response_header_ok[0];
-                        self.producer.commit_with_size(1 + size, write_grant);
+                        self.producer.commit_with_size(1 + payload_size, write_grant);
                         self.consumer.release_consume(read_grant);
                         self.write_grant_request = None;
                     },
@@ -85,8 +87,8 @@ impl CommandProcessor {
         }
     }
 
-    fn process_command(&mut self, target: u8, read_grant: CommandGrantR, write_grant: CommandGrantW) -> Result<usize, CommandError> {
-        if target == 1 {
+    fn process_command(&mut self, endpoint: u8, read_grant: CommandGrantR, write_grant: CommandGrantW) -> Result<usize, CommandError> {
+        if endpoint == 1 {
             return self.gpio_target.process_command(read_grant, write_grant);
         }
         Err(CommandError::Hal(HalErrorKind::UnsupportedCommand.into()))
@@ -167,7 +169,18 @@ impl CommandTarget for GpioCommandTarget {
         info!("command: {:?}", command);
         match command {
             GpioCommand::EnumeratePins => {
-                Err(HalError::from(HalErrorKind::UnsupportedCommand))
+                let n = self.pins.len();
+                assert!(n < 256);
+                //panic!("size: {}", 1 + mem::size_of::<GpioPinInformation>() * n);
+                write_grant.check_size(1 + mem::size_of::<GpioPinInformation>() * n)?;
+
+                write_grant[0] = n as u8;
+                let mut offset = 1;
+                for pin in &self.pins {
+                    let size = ssmarshal::serialize(&mut write_grant[offset..], &pin.information()).unwrap();
+                    offset += size;
+                }
+                Ok(offset)
             },
             GpioCommand::GetPinMode(index) => {
                 write_grant.check_size(2)?;
@@ -193,6 +206,6 @@ impl CommandTarget for GpioCommandTarget {
                 write_grant[0] = value as u8;
                 Ok(1)
             },
-        }.map_err(|e| e.into())
+        }
     }
 }

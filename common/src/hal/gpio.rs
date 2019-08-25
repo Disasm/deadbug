@@ -1,5 +1,6 @@
 use crate::hal::HalResult;
 use serde::{Serialize, Deserialize};
+use crate::protocol::gpio::GpioPinInformation;
 
 #[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum GpioPinMode {
@@ -9,7 +10,7 @@ pub enum GpioPinMode {
 }
 
 pub trait GpioPin {
-    fn address(&self) -> (u8, u8);
+    fn information(&self) -> GpioPinInformation;
 
     fn mode(&self) -> GpioPinMode;
 
