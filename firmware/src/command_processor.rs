@@ -66,7 +66,7 @@ impl CommandProcessor {
                         self.write_grant_request = None;
                     },
                     Err(CommandError::NeedWriteGrant(size)) => {
-                        self.write_grant_request = Some(size);
+                        self.write_grant_request = Some(cmp::max(4, 1 + size));
                         self.producer.commit_with_size(0, write_grant);
                         self.consumer.release_unread(read_grant);
                     },
