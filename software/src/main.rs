@@ -4,7 +4,7 @@ use rand::Rng;
 use std::time::Duration;
 use std::{io, thread};
 use deadbug_common::hal::{HalError, HalResult};
-use deadbug_common::protocol::{CommandHeader, ResponseHeader};
+use deadbug_common::protocol::channels::{CommandChannel, PacketChannel};
 use deadbug_common::protocol::gpio::GpioCommand;
 use deadbug_common::hal::gpio::GpioPinMode;
 use serde::Serialize;
@@ -37,13 +37,6 @@ impl CobsSerialPort {
         }
     }
 
-    pub fn write_packet(&mut self, data: &[u8]) -> io::Result<()> {
-        let mut data = cobs::encode_vec(data);
-        data.push(0);
-        self.inner.write_all(&data)?;
-        self.inner.flush()
-    }
-
     fn fill_buf(&mut self) -> io::Result<()> {
         if self.buffer.contains(&0) {
             return Ok(());
@@ -59,7 +52,23 @@ impl CobsSerialPort {
         }
     }
 
-    pub fn read_packet(&mut self) -> io::Result<Vec<u8>> {
+    pub fn command<'a, C: Serialize, R: DeserializeOwned>(&mut self, endpoint: u8, command: C) -> HalResult<R> {
+        let mut buf = [0; 128];
+        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
+        let response = CommandChannel::command(self, endpoint, &buf[..size])?;
+        let response = ssmarshal::deserialize(&response).unwrap().0;
+        Ok(response)
+    }
+
+    pub fn gpio_command(&mut self, command: GpioCommand) -> Result<Vec<u8>, HalError> {
+        let mut buf = [0; 128];
+        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
+        CommandChannel::command(self, 1, &buf[..size])
+    }
+}
+
+impl PacketChannel for CobsSerialPort {
+    fn read_packet(&mut self) -> io::Result<Vec<u8>> {
         self.fill_buf()?;
         println!("filled buffer {:?}", self.buffer);
 
@@ -76,41 +85,11 @@ impl CobsSerialPort {
         Ok(data)
     }
 
-    pub fn raw_command(&mut self, endpoint: u8, command: &[u8]) -> HalResult<Vec<u8>> {
-        let header = CommandHeader {
-            endpoint
-        };
-        let mut header_buffer = [0; 1];
-        let header_size = ssmarshal::serialize(&mut header_buffer, &header).unwrap();
-
-        let mut command_buffer = Vec::new();
-        command_buffer.extend_from_slice(&header_buffer[..header_size]);
-        command_buffer.extend_from_slice(command);
-
-        println!("sending packet: {:?}", command_buffer);
-        self.write_packet(&command_buffer).unwrap();
-        let response_buffer = self.read_packet().unwrap();
-        println!("response packet: {:?}", response_buffer);
-
-        let (header, header_size) = ssmarshal::deserialize::<ResponseHeader>(&response_buffer).unwrap();
-        match header {
-            Ok(()) => return Ok(response_buffer[header_size..].to_vec()),
-            Err(error_kind) => return Err(error_kind.into()),
-        }
-    }
-
-    pub fn command<'a, C: Serialize, R: DeserializeOwned>(&mut self, endpoint: u8, command: C) -> HalResult<R> {
-        let mut buf = [0; 128];
-        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
-        let response = self.raw_command(endpoint, &buf[..size])?;
-        let response = ssmarshal::deserialize(&response).unwrap().0;
-        Ok(response)
-    }
-
-    pub fn gpio_command(&mut self, command: GpioCommand) -> Result<Vec<u8>, HalError> {
-        let mut buf = [0; 128];
-        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
-        self.raw_command(1, &buf[..size])
+    fn write_packet(&mut self, data: &[u8]) -> io::Result<()> {
+        let mut data = cobs::encode_vec(data);
+        data.push(0);
+        self.inner.write_all(&data)?;
+        self.inner.flush()
     }
 }
 
