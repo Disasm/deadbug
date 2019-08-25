@@ -5,6 +5,7 @@ use deadbug_common::hal::{HalError, HalResult, HalErrorKind};
 use core::ops::{Deref, DerefMut};
 use crate::targets::{BoardGpioPinSet, BoardGpioPin};
 use deadbug_common::hal::gpio::GpioPin;
+use deadbug_common::protocol::ResponseHeader;
 
 
 enum CommandError {
@@ -23,15 +24,21 @@ pub struct CommandProcessor {
     consumer: PacketConsumer,
     write_grant_request: Option<usize>,
     gpio_target: GpioCommandTarget,
+    response_header_ok: [u8; 1],
 }
 
 impl CommandProcessor {
     pub fn new(producer: CobsTxProducer, consumer: PacketConsumer, gpio_target: GpioCommandTarget) -> Self {
+        let response_header: ResponseHeader = Ok(());
+        let mut response_header_buf = [0; 1];
+        ssmarshal::serialize(&mut response_header_buf, &response_header).unwrap();
+
         Self {
             producer,
             consumer,
             write_grant_request: None,
-            gpio_target
+            gpio_target,
+            response_header_ok: response_header_buf,
         }
     }
 
@@ -53,7 +60,7 @@ impl CommandProcessor {
                 let write_grant_shim = CommandGrantW(&mut write_grant);
                 match self.process_command(target, read_grant_shim, write_grant_shim) {
                     Ok(size) => {
-                        write_grant[0] = 0;
+                        write_grant[0] = self.response_header_ok[0];
                         self.producer.commit_with_size(1 + size, write_grant);
                         self.consumer.release_consume(read_grant);
                         self.write_grant_request = None;
@@ -64,9 +71,9 @@ impl CommandProcessor {
                         self.consumer.release_unread(read_grant);
                     },
                     Err(CommandError::Hal(e)) => {
-                        write_grant[0] = 0xff;
-                        let size = ssmarshal::serialize(&mut write_grant[1..], &e.kind()).unwrap();
-                        self.producer.commit_with_size(1 + size, write_grant);
+                        let response_header: ResponseHeader = Err(e.kind());
+                        let size = ssmarshal::serialize(&mut write_grant, &response_header).unwrap();
+                        self.producer.commit_with_size(size, write_grant);
                         self.consumer.release_consume(read_grant);
                         self.write_grant_request = None;
                     },
@@ -154,7 +161,7 @@ impl CommandTarget for GpioCommandTarget {
     }
 
     fn process_command(&mut self, read_grant: CommandGrantR, mut write_grant: CommandGrantW) -> Result<usize, CommandError> {
-        use deadbug_common::protocol::GpioCommand;
+        use deadbug_common::protocol::gpio::GpioCommand;
 
         let command: GpioCommand = ssmarshal::deserialize(&read_grant).map_err(|e| HalError::from(e))?.0;
         info!("command: {:?}", command);

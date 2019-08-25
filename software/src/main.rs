@@ -3,9 +3,12 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::time::Duration;
 use std::{io, thread};
-use deadbug_common::hal::{HalError, HalErrorKind};
-use deadbug_common::protocol::GpioCommand;
+use deadbug_common::hal::{HalError, HalResult};
+use deadbug_common::protocol::{CommandHeader, ResponseHeader};
+use deadbug_common::protocol::gpio::GpioCommand;
 use deadbug_common::hal::gpio::GpioPinMode;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 
 fn find_device_port() -> Option<String> {
@@ -73,27 +76,41 @@ impl CobsSerialPort {
         Ok(data)
     }
 
-    pub fn command(&mut self, target: u8, command: &[u8]) -> Result<Vec<u8>, HalError> {
-        let mut buffer = vec![target];
-        buffer.extend_from_slice(command);
-        println!("sending packet: {:?}", buffer);
-        self.write_packet(&buffer).unwrap();
-        let response = self.read_packet().unwrap();
-        println!("response packet: {:?}", response);
-        if response[0] == 0 {
-            return Ok(response[1..].to_vec());
+    pub fn raw_command(&mut self, endpoint: u8, command: &[u8]) -> HalResult<Vec<u8>> {
+        let header = CommandHeader {
+            endpoint
+        };
+        let mut header_buffer = [0; 1];
+        let header_size = ssmarshal::serialize(&mut header_buffer, &header).unwrap();
+
+        let mut command_buffer = Vec::new();
+        command_buffer.extend_from_slice(&header_buffer[..header_size]);
+        command_buffer.extend_from_slice(command);
+
+        println!("sending packet: {:?}", command_buffer);
+        self.write_packet(&command_buffer).unwrap();
+        let response_buffer = self.read_packet().unwrap();
+        println!("response packet: {:?}", response_buffer);
+
+        let (header, header_size) = ssmarshal::deserialize::<ResponseHeader>(&response_buffer).unwrap();
+        match header {
+            Ok(()) => return Ok(response_buffer[header_size..].to_vec()),
+            Err(error_kind) => return Err(error_kind.into()),
         }
-        if response[0] == 0xff {
-            let error_kind: HalErrorKind = ssmarshal::deserialize(&response[1..]).unwrap().0;
-            return Err(error_kind.into());
-        }
-        unimplemented!()
+    }
+
+    pub fn command<'a, C: Serialize, R: DeserializeOwned>(&mut self, endpoint: u8, command: C) -> HalResult<R> {
+        let mut buf = [0; 128];
+        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
+        let response = self.raw_command(endpoint, &buf[..size])?;
+        let response = ssmarshal::deserialize(&response).unwrap().0;
+        Ok(response)
     }
 
     pub fn gpio_command(&mut self, command: GpioCommand) -> Result<Vec<u8>, HalError> {
         let mut buf = [0; 128];
         let size = ssmarshal::serialize(&mut buf, &command).unwrap();
-        self.command(1, &buf[..size])
+        self.raw_command(1, &buf[..size])
     }
 }
 
