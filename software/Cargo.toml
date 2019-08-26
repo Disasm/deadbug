@@ -12,3 +12,4 @@ cobs = "0.1.4"
 serde = { version = "1.0", features = ["derive"] }
 ssmarshal = "1.0.0"
 deadbug-common = { path = "../common" }
+embedded-hal = "0.2.3"

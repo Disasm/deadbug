@@ -3,12 +3,16 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::time::Duration;
 use std::{io, thread};
-use deadbug_common::hal::{HalError, HalResult};
-use deadbug_common::protocol::channels::{CommandChannel, PacketChannel};
-use deadbug_common::protocol::gpio::GpioCommand;
+use deadbug_common::hal::{HalError, HalResult, HalErrorKind};
+use deadbug_common::protocol::channels::{CommandChannel, PacketChannel, SharedCommandChannel, SharedEndpointChannel};
+use deadbug_common::protocol::gpio::{GpioCommand, GpioPinInformation};
 use deadbug_common::hal::gpio::GpioPinMode;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::collections::HashMap;
+use std::sync::Arc;
+use embedded_hal::digital;
+use embedded_hal::digital::v2::OutputPin;
 
 
 fn find_device_port() -> Option<String> {
@@ -51,20 +55,6 @@ impl CobsSerialPort {
             }
         }
     }
-
-    pub fn command<'a, C: Serialize, R: DeserializeOwned>(&mut self, endpoint: u8, command: C) -> HalResult<R> {
-        let mut buf = [0; 128];
-        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
-        let response = CommandChannel::command(self, endpoint, &buf[..size])?;
-        let response = ssmarshal::deserialize(&response).unwrap().0;
-        Ok(response)
-    }
-
-    pub fn gpio_command(&mut self, command: GpioCommand) -> Result<Vec<u8>, HalError> {
-        let mut buf = [0; 128];
-        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
-        CommandChannel::command(self, 1, &buf[..size])
-    }
 }
 
 impl PacketChannel for CobsSerialPort {
@@ -93,26 +83,153 @@ impl PacketChannel for CobsSerialPort {
     }
 }
 
-fn led_test(port: Box<dyn SerialPort>) {
-    let mut port = CobsSerialPort::new(port);
+struct BridgeDevice {
+    channel: SharedCommandChannel
+}
 
-    for i in 0..8 {
-        port.gpio_command(GpioCommand::SetPinMode(i, GpioPinMode::PushPullOutput)).expect("can't set gpio mode");
-        port.gpio_command(GpioCommand::SetPinValue(i, false)).expect("can't set gpio value");
+impl BridgeDevice {
+    pub fn new(channel: Box<dyn CommandChannel>) -> Self {
+        Self {
+            channel: SharedCommandChannel::new(channel)
+        }
     }
+
+    pub fn gpio(&self) -> HalResult<GpioPeripheral> {
+        let ep_channel = SharedEndpointChannel::new(self.channel.clone(), 1);
+        GpioPeripheral::probe(ep_channel)
+    }
+}
+
+struct GpioBridge {
+    channel: SharedEndpointChannel,
+}
+
+impl GpioBridge {
+    fn enumerate(&self) -> HalResult<Vec<GpioPinInformation>> {
+        let command = GpioCommand::EnumeratePins;
+        let mut buf = [0; 16];
+        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
+        let response = self.channel.command(&buf[..size])?;
+        if response.len() < 1 {
+            return Err(HalErrorKind::ProtocolError.into());
+        }
+        let n = response[0] as usize;
+        let mut result = Vec::new();
+        let mut offset = 1;
+        for _ in 0..n {
+            let (item, size) = ssmarshal::deserialize(&response[offset..]).map_err(|_| HalError::from(HalErrorKind::ProtocolError))?;
+            result.push(item);
+            offset += size;
+        }
+        if offset != response.len() {
+            return Err(HalErrorKind::ProtocolError.into());
+        }
+        Ok(result)
+    }
+
+    fn simple_command<'a, C: Serialize, R: DeserializeOwned>(&self, command: C) -> HalResult<R> {
+        let mut buf = [0; 16];
+        let size = ssmarshal::serialize(&mut buf, &command).unwrap();
+        let response = self.channel.command(&buf[..size])?;
+        let response = ssmarshal::deserialize(&response).unwrap().0;
+        Ok(response)
+    }
+
+    fn get_pin_mode(&self, index: u8) -> HalResult<GpioPinMode> {
+        self.simple_command(GpioCommand::GetPinMode(index))
+    }
+
+    fn set_pin_mode(&self, index: u8, mode: GpioPinMode) -> HalResult<()> {
+        self.simple_command(GpioCommand::SetPinMode(index, mode))
+    }
+
+    fn get_pin_value(&self, index: u8) -> HalResult<bool> {
+        self.simple_command(GpioCommand::GetPinValue(index))
+    }
+
+    fn set_pin_value(&self, index: u8, value: bool) -> HalResult<()> {
+        self.simple_command(GpioCommand::SetPinValue(index, value))
+    }
+}
+
+struct GpioPeripheral {
+    pins: HashMap<u8, GpioPin>,
+}
+
+impl GpioPeripheral {
+    fn probe(channel: SharedEndpointChannel) -> HalResult<Self> {
+        let bridge = Arc::new(GpioBridge {
+            channel,
+        });
+        let pin_info = bridge.enumerate()?;
+
+        let pins: HashMap<_, _> = pin_info.iter().enumerate().map(|(i, info)| {
+            let pin = GpioPin {
+                bridge: bridge.clone(),
+                index: i as u8
+            };
+            (info.index_minor, pin)
+        }).collect();
+
+        Ok(Self {
+            pins,
+        })
+    }
+
+    pub fn pin(&mut self, index_minor: u8) -> HalResult<GpioPin> {
+        self.pins.remove(&index_minor).ok_or_else(|| HalError::from(HalErrorKind::InvalidParameter))
+    }
+
+    pub fn all_pins(&mut self) -> Vec<GpioPin> {
+        let mut pins: Vec<_> = self.pins.drain().map(|(_, pin)| pin).collect();
+        pins.sort_unstable_by(|a, b| a.index.cmp(&b.index));
+        pins
+    }
+}
+
+struct GpioPin {
+    bridge: Arc<GpioBridge>,
+    index: u8,
+}
+
+impl GpioPin {
+    pub fn into_output(&self) -> HalResult<()> {
+        self.bridge.set_pin_mode(self.index, GpioPinMode::PushPullOutput)
+    }
+}
+
+impl digital::v2::OutputPin for GpioPin {
+    type Error = HalError;
+
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        self.bridge.set_pin_value(self.index, false)
+    }
+
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        self.bridge.set_pin_value(self.index, true)
+    }
+}
+
+fn led_test(port: Box<dyn SerialPort>) -> HalResult<()> {
+    let port = CobsSerialPort::new(port);
+
+    let bridge = BridgeDevice::new(Box::new(port));
+    let mut gpio = bridge.gpio()?;
+
+    let mut pins = gpio.all_pins();
+    for pin in &pins {
+        pin.into_output()?;
+    }
+
     let ten_millis = Duration::from_millis(100);
     loop {
-        for i in 0..8 {
-            let next = (i + 2) % 8;
-            port.gpio_command(GpioCommand::SetPinValue(next, true)).expect("can't set gpio value");
-            port.gpio_command(GpioCommand::SetPinValue(i, false)).expect("can't set gpio value");
+        for i in 0..pins.len() {
+            let next = (i + 2) % pins.len();
+            pins[next].set_high()?;
+            pins[i].set_low()?;
             thread::sleep(ten_millis);
         }
     }
-    port.gpio_command(GpioCommand::SetPinValue(0, true)).expect("can't set gpio value");
-
-    let v = port.gpio_command(GpioCommand::GetPinValue(0)).expect("can't get gpio value");
-    println!("gpio value: {:?}", v);
 }
 
 #[allow(unused)]
@@ -186,5 +303,5 @@ fn main() {
 
     println!("running test...");
     //rng_test(port);
-    led_test(port);
+    led_test(port).unwrap();
 }
